@@ -11,8 +11,29 @@ from .routes import bp, auth, admin, docente_bp, api
 from .security import canonical_host_check_or_abort, csrf_origin_referer_check_or_abort, nl2br_safe
 from .templates_embedded import TEMPLATES
 
+def _parse_allowed_hosts() -> set[str]:
+    raw = (os.environ.get("ALLOWED_HOSTS") or "").strip()
+    base = {"localhost", "127.0.0.1", "0.0.0.0"}
+    if not raw:
+        return base
+    extra = {h.strip().lower() for h in raw.split(",") if h.strip()}
+    return base | extra
+
 def create_app(env_name: str = "production") -> Flask:
+    
     app = Flask(__name__)
+    app = Flask(__name__, instance_relative_config=True)
+
+    # IMPORTANT: evita 400 se qualcuno ha impostato SERVER_NAME
+    app.config.pop("SERVER_NAME", None)
+
+    allowed_hosts_set = _parse_allowed_hosts()
+
+    @app.before_request
+    def _enforce_allowed_host():
+        host = (request.host or "").split(":", 1)[0].lower().strip()
+        if not host or host not in allowed_hosts_set:
+            abort(400)
 
     # Config
     if env_name == "development":
