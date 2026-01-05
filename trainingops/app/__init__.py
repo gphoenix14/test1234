@@ -22,26 +22,35 @@ def _parse_allowed_hosts() -> set[str]:
 
 
 def create_app(env_name: str = "production") -> Flask:
-    # Single app instance (keep instance_relative_config for instance folder usage)
     app = Flask(__name__, instance_relative_config=True)
 
-    # IMPORTANT: avoid 400/KeyError due to missing SERVER_NAME
-    # Do NOT call app.config(...) because config is not callable.
+    # Evita comportamenti anomali legati a SERVER_NAME
+    # (Config non è callable: non usare app.config(...))
     app.config["SERVER_NAME"] = None
 
-    allowed_hosts_set = _parse_allowed_hosts()
-
-    @app.before_request
-    def _enforce_allowed_host():
-        host = (request.host or "").split(":", 1)[0].lower().strip()
-        if not host or host not in allowed_hosts_set:
-            abort(400)
+    # Logging base
+    app.logger.setLevel(logging.INFO)
 
     # Config
     if env_name == "development":
         app.config.from_object(DevelopmentConfig)
     else:
         app.config.from_object(ProductionConfig)
+
+    # Reverse proxy support (Docker / Nginx / Traefik)
+    if app.config.get("TRUST_PROXY_HEADERS", True):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
+    # Allowed hosts (anti Host-Header abuse)
+    allowed_hosts_set = _parse_allowed_hosts()
+
+    @app.before_request
+    def _enforce_allowed_host():
+        host = (request.host or "").split(":", 1)[0].lower().strip()
+        if not host or host not in allowed_hosts_set:
+            app.logger.warning("Blocked by ALLOWED_HOSTS: host=%r full_host=%r allowed=%r",
+                               host, request.host, sorted(allowed_hosts_set))
+            abort(400)
 
     # UPLOAD_ROOT default
     if not app.config.get("UPLOAD_ROOT"):
@@ -52,13 +61,6 @@ def create_app(env_name: str = "production") -> Flask:
     # Audit log path (instance)
     os.makedirs(app.instance_path, exist_ok=True)
     app.config["AUDIT_LOG_PATH"] = os.path.join(app.instance_path, "audit.log")
-
-    # Logging base
-    app.logger.setLevel(logging.INFO)
-
-    # Reverse proxy support
-    if app.config.get("TRUST_PROXY_HEADERS", True):
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     # DB
     db.init_app(app)
@@ -84,32 +86,31 @@ def create_app(env_name: str = "production") -> Flask:
     app.register_blueprint(docente_bp)
     app.register_blueprint(api)
 
-    # Security headers (OWASP: Security Misconfiguration / XSS / Clickjacking)
+    # Security headers
     @app.after_request
     def set_security_headers(resp):
-        # Non impostare HSTS se non sei dietro HTTPS
-        # Se sei dietro TLS terminato su reverse proxy, assicurati che X-Forwarded-Proto=https e ProxyFix attivo.
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-
-        # CSP base (adatta se hai CDN o inline scripts)
-        # Se i tuoi template usano inline script, dovrai allentare 'script-src' con nonce o 'unsafe-inline' (sconsigliato).
         resp.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         )
         return resp
 
-    # OWASP: Host header attack + CSRF Origin/Referer check
+    # Global security checks
     @app.before_request
     def global_security_checks():
-        canonical_host_check_or_abort()
-        # CSRF check solo per state-changing su session auth (compatibile con template legacy)
+        # Esegui il canonical host check SOLO se configurato (altrimenti rischi 400 su localhost:8080)
+        canon = (app.config.get("CANONICAL_HOST") or os.environ.get("CANONICAL_HOST") or "").strip()
+        if canon:
+            canonical_host_check_or_abort()
+
+        # CSRF check solo per state-changing
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             csrf_origin_referer_check_or_abort()
 
-    # Error handlers (no leakage stacktrace)
+    # Error handlers
     @app.errorhandler(400)
     def bad_request(e):
         return "Bad Request", 400
