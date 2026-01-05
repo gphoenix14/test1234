@@ -5,11 +5,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from .extensions import db
 
+
 event_docente = db.Table(
     "event_docente",
     db.Column("evento_id", db.Integer, db.ForeignKey("evento.id"), primary_key=True),
     db.Column("docente_id", db.Integer, db.ForeignKey("docente.id"), primary_key=True),
 )
+
 
 class Invite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -30,6 +32,7 @@ class Invite(db.Model):
             return False
         return datetime.utcnow() >= self.expires_at
 
+
 class Cliente(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ragione_sociale = db.Column(db.String(200), nullable=False)
@@ -38,6 +41,7 @@ class Cliente(db.Model):
     note = db.Column(db.Text, nullable=True)
 
     incarichi = db.relationship("Incarico", backref="cliente", cascade="all, delete-orphan")
+
 
 class Incarico(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -50,10 +54,12 @@ class Incarico(db.Model):
     calendario = db.relationship("Calendario", backref="incarico", uselist=False, cascade="all, delete-orphan")
     eventi = db.relationship("Evento", backref="incarico", cascade="all, delete-orphan")
 
+
 class Calendario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     incarico_id = db.Column(db.Integer, db.ForeignKey("incarico.id"), nullable=False, unique=True)
     timezone = db.Column(db.String(64), nullable=False, default="Europe/Rome")
+
 
 class Evento(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -67,6 +73,7 @@ class Evento(db.Model):
 
     status = db.Column(db.String(20), nullable=False, default="Opzionato")  # Opzionato / Confermato
     docenti = db.relationship("Docente", secondary=event_docente, back_populates="eventi")
+
 
 class Docente(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -107,6 +114,7 @@ class Docente(db.Model):
     def display_name(self) -> str:
         return f"{self.nome} {self.cognome}".strip()
 
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
@@ -118,7 +126,6 @@ class User(UserMixin, db.Model):
 
     docente_id = db.Column(db.Integer, db.ForeignKey("docente.id"), nullable=True)
 
-    # tracking login failures (basic hardening; limiter resta la prima linea)
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     last_failed_login_at = db.Column(db.DateTime, nullable=True)
     locked_until = db.Column(db.DateTime, nullable=True)
@@ -133,12 +140,13 @@ class User(UserMixin, db.Model):
     def is_active_account(self) -> bool:
         return self.status == "active"
 
+
 def seed_demo_data():
-    from datetime import datetime
+    from datetime import datetime as _dt
     from .security import ensure_calendar_for_incarico
     from .security import generate_invite_code
 
-    # seed idempotente base: se admin esiste, non rifare
+    # Seed idempotente: se admin esiste, non rifare
     if User.query.filter_by(username="admin").first():
         return
 
@@ -173,17 +181,17 @@ def seed_demo_data():
         incarico_id=inc.id,
         titolo="Lezione 1 - Introduzione",
         note="Note demo evento 1",
-        start_dt=datetime(2026, 1, 6, 9, 0),
-        end_dt=datetime(2026, 1, 6, 11, 0),
-        status="Confermato"
+        start_dt=_dt(2026, 1, 6, 9, 0),
+        end_dt=_dt(2026, 1, 6, 11, 0),
+        status="Confermato",
     )
     e2 = Evento(
         incarico_id=inc.id,
         titolo="Lezione 2 - Reti e Sicurezza",
         note=None,
-        start_dt=datetime(2026, 1, 7, 9, 0),
-        end_dt=datetime(2026, 1, 7, 11, 0),
-        status="Opzionato"
+        start_dt=_dt(2026, 1, 7, 9, 0),
+        end_dt=_dt(2026, 1, 7, 11, 0),
+        status="Opzionato",
     )
     e1.docenti.append(d1)
     db.session.add_all([e1, e2])
