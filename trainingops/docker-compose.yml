@@ -1,0 +1,32 @@
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: trainingops-mysql
+    environment:
+      MYSQL_DATABASE: trainingops
+      MYSQL_USER: trainingops
+      MYSQL_PASSWORD: CHANGE_ME_PASSWORD
+      MYSQL_ROOT_PASSWORD: CHANGE_ME_ROOT_PASSWORD
+    command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  app:
+    build: .
+    container_name: trainingops-app
+    environment:
+      - FLASK_ENV=production
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./uploads:/app/uploads
+
+volumes:
+  mysql_data:
