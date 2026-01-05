@@ -11,6 +11,7 @@ from .routes import bp, auth, admin, docente_bp, api
 from .security import canonical_host_check_or_abort, csrf_origin_referer_check_or_abort, nl2br_safe
 from .templates_embedded import TEMPLATES
 
+
 def _parse_allowed_hosts() -> set[str]:
     raw = (os.environ.get("ALLOWED_HOSTS") or "").strip()
     base = {"localhost", "127.0.0.1", "0.0.0.0"}
@@ -19,13 +20,14 @@ def _parse_allowed_hosts() -> set[str]:
     extra = {h.strip().lower() for h in raw.split(",") if h.strip()}
     return base | extra
 
+
 def create_app(env_name: str = "production") -> Flask:
-    
-    app = Flask(__name__)
+    # Single app instance (keep instance_relative_config for instance folder usage)
     app = Flask(__name__, instance_relative_config=True)
 
-    # IMPORTANT: evita 400 se qualcuno ha impostato SERVER_NAME
-    app.config("SERVER_NAME", None)
+    # IMPORTANT: avoid 400/KeyError due to missing SERVER_NAME
+    # Do NOT call app.config(...) because config is not callable.
+    app.config["SERVER_NAME"] = None
 
     allowed_hosts_set = _parse_allowed_hosts()
 
@@ -94,8 +96,9 @@ def create_app(env_name: str = "production") -> Flask:
 
         # CSP base (adatta se hai CDN o inline scripts)
         # Se i tuoi template usano inline script, dovrai allentare 'script-src' con nonce o 'unsafe-inline' (sconsigliato).
-        resp.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
-
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
         return resp
 
     # OWASP: Host header attack + CSRF Origin/Referer check
