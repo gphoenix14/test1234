@@ -25,7 +25,7 @@ def create_app(env_name: str = "production") -> Flask:
     app = Flask(__name__, instance_relative_config=True)
 
     # IMPORTANT: evita 400 se qualcuno ha impostato SERVER_NAME
-    app.config.pop("SERVER_NAME", None)
+    app.config("SERVER_NAME", None)
 
     allowed_hosts_set = _parse_allowed_hosts()
 
